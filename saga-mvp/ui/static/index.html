@@ -21,7 +21,7 @@ const progressSteps=[
   ['booking','Booking calendar','The target agent is booking the meeting date in its calendar.'],
   ['done','Complete','Both sides have finished the meeting operation.']
 ];
-function chooseSender(){if(routeAgent){sender=routeAgent;$('sender').value=routeAgent;}else{sender=$('sender').value;}const target=$('targetAgent').value;$('message').textContent='Sender is '+sender+('; target is '+(target||'not selected')+'.');}
+function chooseSender(){const previous=sender;if(routeAgent){sender=routeAgent;$('sender').value=routeAgent;}else{sender=$('sender').value;if(!$('targetAgent').value||$('targetAgent').value===(previous==='alice'?'bob:calendar_agent':'alice:calendar_agent'))$('targetAgent').value=sender==='alice'?'bob:calendar_agent':'alice:calendar_agent';}const target=$('targetAgent').value;$('message').textContent='Sender is '+sender+('; target is '+(target||'not selected')+'.');}
 function iso(v){return new Date(v).toISOString()}
 function localInput(isoValue){const d=new Date(isoValue);const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())}
 function log(v){$('log').textContent=typeof v==='string'?v:JSON.stringify(v,null,2)}
