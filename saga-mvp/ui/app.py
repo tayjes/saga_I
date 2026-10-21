@@ -178,7 +178,7 @@ async def create_meeting(req: MeetingRequest):
         raise HTTPException(400, "sender and target agents must be different")
 
     # For Charlie, perform the real SAGA send first. It forces the local C
-    # agent to query Provider as charlie:calendar_agent before any calendar
+    # agent to query Provider as c:calendar_agent before any calendar
     # availability work or event creation can occur.
     if req.initiator == "c":
         try:
@@ -530,7 +530,7 @@ async def charlie_attempt(req: CharlieAttemptRequest):
                 "detail": body,
             }
         return {
-            "initiator": "charlie:calendar_agent",
+            "initiator": "c:calendar_agent",
             "target": req.target_aid,
             "status": "blocked" if provider_status in (403, 404) else "error",
             "stage": "provider_lookup" if provider_status is not None else "agent_request",
