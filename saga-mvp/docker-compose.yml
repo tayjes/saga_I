@@ -63,7 +63,7 @@ services:
     build: ./agent
     depends_on: [provider]
     environment:
-      AGENT_UID: charlie
+      AGENT_UID: c
       AGENT_NAME: calendar_agent
       AGENT_PORT: 9003
       KEYS_DIR: /charlie-keys
