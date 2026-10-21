@@ -1,0 +1,10 @@
+{
+  "aid": "charlie:calendar_agent",
+  "device": "charlie-agent-container",
+  "ip": "charlie-agent",
+  "port": 9003,
+  "provider_signature_hex": "LOCAL_UNREGISTERED_DEMO_IDENTITY",
+  "signing_key_seed_hex": "1f8e2834edd551e1faf58d09df504c5fbfd9c0b7b0dc821dc102fd25584d1c85",
+  "pac_private_hex": "91a07f29ae41205e81304cfb99363f88a4e6b384f4c31383d130fd5808ffb5e9",
+  "otk_private_hexes": []
+}
