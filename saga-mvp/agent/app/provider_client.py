@@ -20,7 +20,11 @@ def get_provider_verify_key() -> str:
 
 
 def lookup_peer(initiator_aid: str, target_aid: str) -> dict:
+    """Look up a peer and preserve Provider's status/body for auditable diagnostics."""
     with _client() as c:
         resp = c.get(f"/agents/{target_aid}/lookup", params={"initiator_aid": initiator_aid})
-        resp.raise_for_status()
+        if resp.is_error:
+            raise RuntimeError(
+                f"Provider lookup failed ({resp.status_code}): {resp.text}"
+            )
         return resp.json()
