@@ -488,7 +488,7 @@ async def charlie_attempt(req: CharlieAttemptRequest):
         except ValueError:
             body = {"detail": response.text}
         detail = str(body.get("detail", body))
-        provider_match = re.search(r"Provider lookup failed \\((\\d{3})\\)", detail)
+        provider_match = re.search(r"Provider lookup failed \((\d{3})\)", detail)
         provider_status = int(provider_match.group(1)) if provider_match else None
         if response.is_success:
             return {
