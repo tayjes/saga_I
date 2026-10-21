@@ -58,6 +58,24 @@ services:
     ports: ["9002:9002"]
     networks: [saga-net]
 
+  # Local-only test agent: deliberately absent from Provider user/agent records.
+  charlie-agent:
+    build: ./agent
+    depends_on: [provider]
+    environment:
+      AGENT_UID: charlie
+      AGENT_NAME: calendar_agent
+      AGENT_PORT: 9003
+      KEYS_DIR: /charlie-keys
+      PROVIDER_URL: https://provider:8443
+      PROVIDER_VERIFY_TLS: "false"
+    volumes:
+      - ./certs/agent.crt:/certs/agent.crt:ro
+      - ./certs/agent.key:/certs/agent.key:ro
+      - ./charlie-keys:/charlie-keys:ro
+    ports: ["9003:9003"]
+    networks: [saga-net]
+
   seed-admin:
     build: ./saga-provider
     depends_on: [provider]
@@ -75,10 +93,11 @@ services:
 
   ui:
     build: ./ui
-    depends_on: [alice-agent, bob-agent, seed-admin]
+    depends_on: [alice-agent, bob-agent, charlie-agent, seed-admin]
     environment:
       ALICE_AGENT_URL: https://alice-agent:9001
       BOB_AGENT_URL: https://bob-agent:9002
+      CHARLIE_AGENT_URL: https://charlie-agent:9003
       AGENT_VERIFY_TLS: "false"
       SEED_ADMIN_URL: http://seed-admin:8081
       SEED_ADMIN_TOKEN: ${SEED_ADMIN_TOKEN:?set SEED_ADMIN_TOKEN}
