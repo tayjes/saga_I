@@ -99,3 +99,35 @@ This gives you a working Provider. Next up: the two agent containers
 (Alice/Bob, using `smolagents` + Google Calendar) doing the DH handshake and
 token exchange directly over TLS — Phase 1 of the build plan — before
 inserting the security proxy in Phase 2.
+
+
+## Meeting UI and OTK management
+
+The Docker Compose stack includes a local web UI on port **8080**:
+
+- Overview: http://localhost:8080/
+- Alice dashboard: http://localhost:8080/alice
+- Bob dashboard: http://localhost:8080/bob
+
+Each dedicated dashboard locks the sender to its own agent, schedules a meeting with the other agent, checks calendar availability, and exposes an OTK refresh control for that agent. Refreshing OTKs updates the Provider pool and the matching private keys in the mounted key file.
+
+### Local setup
+
+From this directory:
+
+1. Create local environment settings and replace the admin-token placeholder with a long random value:
+   ```bash
+   cp .env.example .env
+   ```
+2. Create the local seed configuration and set real local-only passwords:
+   ```bash
+   cp saga-provider/seed_config.example.json saga-provider/seed_config.json
+   ```
+3. Make sure the local Google service-account JSON exists at `secrets/gcal-service-account.json`, and that the local certificates and agent key files exist.
+4. Start the stack:
+   ```bash
+   docker compose up --build -d
+   ```
+5. Open one of the URLs above. To inspect startup issues, use `docker compose logs --tail=100 ui seed-admin provider alice-agent bob-agent`.
+
+Do not commit `.env`, `seed_config.json`, Google credentials, private keys, or generated local key files. The admin token protects the seed-admin endpoint; keep it private and use this stack for local development only.
