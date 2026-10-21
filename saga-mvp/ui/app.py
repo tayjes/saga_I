@@ -72,7 +72,7 @@ def _agent(name: str) -> str:
         return ALICE_URL
     if name == "bob":
         return BOB_URL
-    if name == "charlie":
+    if name == "c":
         return CHARLIE_AGENT_URL
     raise HTTPException(400, "sender agent must be alice, bob, or charlie")
 
@@ -168,8 +168,8 @@ async def availability(start: str, end: str):
 
 @app.post("/api/meeting")
 async def create_meeting(req: MeetingRequest):
-    if req.initiator not in ("alice", "bob", "charlie"):
-        raise HTTPException(400, "initiator must be alice, bob, or charlie")
+    if req.initiator not in ("alice", "bob", "c"):
+        raise HTTPException(400, "initiator must be alice, bob, or c")
 
     target = req.target_agent.strip()
     if target not in ("alice:calendar_agent", "bob:calendar_agent"):
@@ -180,7 +180,7 @@ async def create_meeting(req: MeetingRequest):
     # For Charlie, perform the real SAGA send first. It forces the local C
     # agent to query Provider as charlie:calendar_agent before any calendar
     # availability work or event creation can occur.
-    if req.initiator == "charlie":
+    if req.initiator == "c":
         try:
             async with httpx.AsyncClient(verify=VERIFY_TLS, timeout=20.0) as client:
                 preflight = await client.post(
@@ -199,7 +199,7 @@ async def create_meeting(req: MeetingRequest):
             detail = exc.response.text or str(exc)
             raise HTTPException(
                 exc.response.status_code,
-                f"Charlie Provider lookup failed for {target}: {detail}",
+                f"C Provider lookup failed for {target}: {detail}",
             ) from exc
         except httpx.HTTPError as exc:
             raise HTTPException(502, f"Could not reach Charlie agent: {exc}") from exc
@@ -521,7 +521,7 @@ async def charlie_attempt(req: CharlieAttemptRequest):
         provider_status = int(provider_match.group(1)) if provider_match else None
         if response.is_success:
             return {
-                "initiator": "charlie:calendar_agent",
+                "initiator": "c:calendar_agent",
                 "target": req.target_aid,
                 "status": "sent",
                 "stage": "message_exchange",
@@ -580,5 +580,5 @@ def bob_dashboard():
 
 @app.get("/charlie")
 def charlie_demo_dashboard():
-    """Dashboard for the local Charlie agent; it is intentionally not registered with Provider."""
+    """Dashboard for the local C agent; it is intentionally not registered with Provider."""
     return _serve_dashboard()
