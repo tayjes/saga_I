@@ -400,14 +400,14 @@ async def assistant_meeting(req: AssistantMeetingRequest):
     booking_completed = False
     user_text = " ".join(message.content for message in req.messages if message.role == "user")
     booking_authorized = bool(re.search(
-        r"(schedule|book|booking|reserve|arrange|set\\s+(?:up\\s+)?(?:a\\s+)?meeting|create\\s+(?:a\\s+)?meeting|put .*calendar|confirm the booking)",
+        r"(schedule|book|booking|reserve|arrange|set meeting|set up meeting|create meeting|put .*calendar|confirm the booking)",
         user_text,
         re.IGNORECASE,
     ))
     if not booking_authorized and req.messages:
         latest_user = next((m.content.strip().lower() for m in reversed(req.messages) if m.role == "user"), "")
         prior_assistant = " ".join(m.content.lower() for m in req.messages if m.role == "assistant")
-        booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"(book|schedule|set\\s+(?:up\\s+)?(?:a\\s+)?meeting|create\\s+(?:a\\s+)?meeting|put .*calendar)", prior_assistant))
+        booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"(book|schedule|set meeting|set up meeting|create meeting|put .*calendar)", prior_assistant))
 
     for _ in range(6):
         try:
