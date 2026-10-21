@@ -84,6 +84,8 @@ services:
       SEED_ADMIN_TOKEN: ${SEED_ADMIN_TOKEN:?set SEED_ADMIN_TOKEN}
       ALICE_EMAIL: ${ALICE_EMAIL:-}
       BOB_EMAIL: ${BOB_EMAIL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
     ports: ["8080:8080"]
     networks: [saga-net]
 
