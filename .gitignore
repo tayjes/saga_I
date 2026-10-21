@@ -9,4 +9,5 @@ saga-mvp/.env
 saga-mvp/secrets/
 saga-mvp/saga-provider/seed_config.json
 saga-mvp/saga-provider/seed-keys/*.json
+saga-mvp/saga-provider/seed-keys/*.json.bak
 saga-mvp/certs/*.key
