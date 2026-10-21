@@ -69,5 +69,5 @@ document.querySelectorAll('.nav a').forEach(a=>{if(a.getAttribute('href')===loca
 if(routeAgent==='alice'||routeAgent==='bob'){sender=routeAgent;$('sender').value=routeAgent;$('targetAgent').value=routeAgent==='alice'?'bob:calendar_agent':'alice:calendar_agent';$('otkUser').value=routeAgent;$('modeNotice').textContent=(routeAgent==='alice'?'Alice':'Bob')+' dashboard · selected sender is '+routeAgent+'. Use the top navigation to switch dashboards.';document.querySelector('.title').textContent=(routeAgent==='alice'?'Alice':'Bob')+' dashboard';}
 if(routeAgent==='charlie'){$('assistant-card').hidden=true;$('meeting-card').hidden=true;$('security-card').hidden=true;$('charlieNotice').hidden=false;$('health').textContent='C demo · Provider authentication failed';}
 chooseSender();
-(async()=>{try{const h=await api('/api/health');$('health').textContent='Alice '+h.alice.status+' · Bob '+h.bob.status;log(h)}catch(e){$('health').textContent='UI backend unavailable';log(e.message)}})();
+(async()=>{try{const h=await api('/api/health');if(routeAgent!=='charlie')$('health').textContent='Alice '+h.alice.status+' · Bob '+h.bob.status;log(h)}catch(e){if(routeAgent!=='charlie')$('health').textContent='UI backend unavailable';log(e.message)}})();
 </script></body></html>
