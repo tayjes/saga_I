@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -271,7 +272,7 @@ ASSISTANT_TOOLS = [
 ]
 
 
-async def _run_assistant_tool(name: str, args: dict, req: AssistantMeetingRequest, checked_slots: set):
+async def _run_assistant_tool(name: str, args: dict, req: AssistantMeetingRequest, checked_slots: set, booking_authorized: bool):
     if name == "check_availability":
         start = args.get("start", "")
         end = args.get("end", "")
@@ -297,6 +298,8 @@ async def _run_assistant_tool(name: str, args: dict, req: AssistantMeetingReques
         }
 
     if name == "schedule_meeting":
+        if not booking_authorized:
+            return {"error": "Booking was not explicitly authorized by the user. Present the free options and ask whether they want one booked."}
         title = str(args.get("title", "")).strip()
         start, end = str(args.get("start", "")), str(args.get("end", ""))
         if not title:
@@ -366,6 +369,13 @@ async def assistant_meeting(req: AssistantMeetingRequest):
     messages = [{"role": "system", "content": system_prompt}] + conversation
     checked_slots = set()
     actions = []
+    booking_completed = False
+    user_text = " ".join(message.content for message in req.messages if message.role == "user")
+    booking_authorized = bool(re.search(r"\\b(schedule|book|booking|reserve|arrange|set up|put (?:it|that) on (?:the )?calendar|go ahead and book|confirm the booking)\\b", user_text, re.IGNORECASE))
+    if not booking_authorized and req.messages:
+        latest_user = next((m.content.strip().lower() for m in reversed(req.messages) if m.role == "user"), "")
+        prior_assistant = " ".join(m.content.lower() for m in req.messages if m.role == "assistant")
+        booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"\\b(book|schedule|put .*calendar)\\b", prior_assistant))
 
     async with httpx.AsyncClient(timeout=45.0) as client:
         for _ in range(6):
@@ -407,7 +417,12 @@ async def assistant_meeting(req: AssistantMeetingRequest):
                 name = function.get("name", "")
                 try:
                     arguments = json.loads(function.get("arguments") or "{}")
-                    result = await _run_assistant_tool(name, arguments, req, checked_slots)
+                    if name == "schedule_meeting" and booking_completed:
+                        result = {"error": "A meeting was already booked during this request; do not create a duplicate."}
+                    else:
+                        result = await _run_assistant_tool(name, arguments, req, checked_slots, booking_authorized)
+                    if name == "schedule_meeting" and isinstance(result, dict) and (result.get("booking_result") or {}).get("status") == "scheduled":
+                        booking_completed = True
                 except HTTPException as exc:
                     result = {"error": exc.detail}
                 except (ValueError, TypeError, KeyError) as exc:
