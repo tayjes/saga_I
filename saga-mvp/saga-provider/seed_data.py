@@ -121,6 +121,59 @@ def register_agent(client: httpx.Client, signing_key: SigningKey, uid: str, pass
     print(f"  saved private keys -> {key_file}")
 
 
+def refresh_agent_otks(client: httpx.Client, signing_key: SigningKey, uid: str, password: str, agent_cfg: dict, keys_dir: Path, num_otks: int | None = None):
+    """Rotate an agent's OTK pool and atomically update its mounted private-key file."""
+    name = agent_cfg["name"]
+    aid = f"{uid}:{name}"
+    key_file = keys_dir / f"{uid}__{name}.json"
+    if not key_file.exists():
+        # Check this before changing the Provider, or the public/private pools can diverge.
+        raise FileNotFoundError(f"Cannot refresh {aid}: missing {key_file}")
+
+    count = num_otks or agent_cfg.get("num_otks", 10)
+    if count < 1 or count > 100:
+        raise ValueError("num_otks must be between 1 and 100")
+
+    data = json.loads(key_file.read_text())
+    otk_privs = [PrivateKey.generate() for _ in range(count)]
+    otks = [bytes(k.public_key).hex() for k in otk_privs]
+    otk_signatures = [signing_key.sign(f"{aid}:{o}".encode()).signature.hex() for o in otks]
+
+    # Prepare a protected temporary file before updating the Provider.
+    updated_data = dict(data)
+    updated_data["otk_private_hexes"] = [bytes(k).hex() for k in otk_privs]
+    import tempfile
+    fd, temp_name = tempfile.mkstemp(prefix=f".{uid}-{name}-otks-", dir=str(keys_dir))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+            json.dump(updated_data, temp_file, indent=2)
+            temp_file.write("\n")
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.chmod(temp_name, 0o600)
+
+        resp = client.post(
+            f"/agents/{aid}/otks/refresh",
+            json={
+                "uid": uid,
+                "password": password,
+                "otks": otks,
+                "otk_signatures": otk_signatures,
+            },
+        )
+        resp.raise_for_status()
+        # Atomic replace means agents never read a partially-written key file.
+        os.replace(temp_name, key_file)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+    print(f"  refreshed {aid}: {len(otks)} OTKs -> {key_file}")
+    return resp.json()
+
 def run(config: dict, keys_dir: Path, client: httpx.Client):
     for user_cfg in config["users"]:
         uid = user_cfg["uid"]

@@ -1,22 +1,4 @@
-"""
-Google Calendar tool for the agent. Uses a service account so the
-container never needs an interactive OAuth consent flow -- the trade-off
-is that the service account's email must be added as a collaborator on
-the calendar it's writing to (Calendar settings -> Share with specific
-people -> add the service account's `client_email`, "Make changes to
-events" permission).
-
-Setup:
-1. Google Cloud Console -> create/select a project -> enable the
-   "Google Calendar API".
-2. IAM & Admin -> Service Accounts -> create one -> Keys -> Add key ->
-   JSON. Save it somewhere NOT committed to git.
-3. Share the target calendar with the service account's `client_email`
-   (found inside the downloaded JSON file).
-4. Set GOOGLE_SERVICE_ACCOUNT_FILE (path to that JSON, mounted into the
-   container) and GOOGLE_CALENDAR_ID (the calendar's ID -- usually just
-   the owner's email address for their primary calendar) for each agent.
-"""
+"""Small Google Calendar adapter used by the agent and meeting UI."""
 from functools import lru_cache
 
 from google.oauth2 import service_account
@@ -36,38 +18,28 @@ def _service():
 
 
 def create_event(summary: str, start_iso: str, end_iso: str, attendees: list[str] | None = None) -> dict:
-    """
-    start_iso / end_iso must be RFC3339 datetimes with a timezone offset,
-    e.g. "2026-09-10T14:00:00+05:30". Returns the created event resource
-    (includes 'id' and 'htmlLink').
-    """
-    body = {
-        "summary": summary,
-        "start": {"dateTime": start_iso},
-        "end": {"dateTime": end_iso},
-    }
+    body = {"summary": summary, "start": {"dateTime": start_iso}, "end": {"dateTime": end_iso}}
     if attendees:
         body["attendees"] = [{"email": a} for a in attendees]
-
-    service = _service()
-    return service.events().insert(calendarId=config.GOOGLE_CALENDAR_ID, body=body).execute()
+    return _service().events().insert(calendarId=config.GOOGLE_CALENDAR_ID, body=body).execute()
 
 
-def list_upcoming_events(max_results: int = 10) -> list[dict]:
-    """Used to check availability before proposing a time."""
-    import datetime
-
-    service = _service()
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+def list_events(time_min_iso: str, time_max_iso: str, max_results: int = 100) -> list[dict]:
     result = (
-        service.events()
-        .list(
+        _service().events().list(
             calendarId=config.GOOGLE_CALENDAR_ID,
-            timeMin=now,
+            timeMin=time_min_iso,
+            timeMax=time_max_iso,
             maxResults=max_results,
             singleEvents=True,
             orderBy="startTime",
-        )
-        .execute()
+        ).execute()
     )
     return result.get("items", [])
+
+
+def list_upcoming_events(max_results: int = 10) -> list[dict]:
+    import datetime
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    later = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat() + "Z"
+    return list_events(now, later, max_results=max_results)

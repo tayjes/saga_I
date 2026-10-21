@@ -22,6 +22,7 @@ from app.crypto import PROVIDER_VERIFY_KEY_HEX, provider_sign, verify_signature
 from app.db import agents_col, ensure_indexes, users_col
 from app.models import (
     AgentRegisterRequest,
+    OTKRefreshRequest,
     DeactivateRequest,
     LookupResponse,
     PolicyUpdateRequest,
@@ -155,6 +156,34 @@ async def deactivate_agent(aid: str, req: DeactivateRequest):
         raise HTTPException(404, "agent not found or not owned by user")
     await agents_col.update_one({"aid": aid}, {"$set": {"active": False}})
     return {"status": "deactivated", "aid": aid}
+
+
+@app.post("/agents/{aid}/otks/refresh")
+async def refresh_agent_otks(aid: str, req: OTKRefreshRequest):
+    """Replace an agent's OTK pool after authenticating its owner."""
+    if len(req.otks) != len(req.otk_signatures):
+        raise HTTPException(400, "otks and otk_signatures length mismatch")
+    if not req.otks:
+        raise HTTPException(400, "at least one OTK is required")
+
+    user = await _authenticate(req.uid, req.password)
+    agent = await agents_col.find_one({"aid": aid})
+    if not agent or agent["uid"] != req.uid:
+        raise HTTPException(404, "agent not found or not owned by user")
+
+    for otk_hex, sig_hex in zip(req.otks, req.otk_signatures):
+        msg = f"{aid}:{otk_hex}".encode()
+        if not verify_signature(user["verify_key_hex"], msg, sig_hex):
+            raise HTTPException(400, f"invalid signature for OTK {otk_hex[:8]}...")
+
+    await agents_col.update_one(
+        {"aid": aid},
+        {"$set": {
+            "otks": [{"otk_hex": o, "used": False} for o in req.otks],
+            "otk_counters": {},
+        }},
+    )
+    return {"status": "refreshed", "aid": aid, "num_otks": len(req.otks)}
 
 
 @app.get("/agents/{aid}/lookup", response_model=LookupResponse)

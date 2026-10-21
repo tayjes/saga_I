@@ -5,13 +5,11 @@ services:
     image: mongo:7
     volumes:
       - mongo_data:/data/db
-    networks:
-      - saga-net
+    networks: [saga-net]
 
   provider:
     build: ./saga-provider
-    depends_on:
-      - mongo
+    depends_on: [mongo]
     environment:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: saga
@@ -19,15 +17,12 @@ services:
     volumes:
       - ./certs:/certs:ro
       - provider_keys:/keys
-    ports:
-      - "8443:8443"
-    networks:
-      - saga-net
+    ports: ["8443:8443"]
+    networks: [saga-net]
 
   alice-agent:
     build: ./agent
-    depends_on:
-      - provider
+    depends_on: [provider]
     environment:
       AGENT_UID: alice
       AGENT_NAME: calendar_agent
@@ -35,21 +30,18 @@ services:
       PROVIDER_URL: https://provider:8443
       PROVIDER_VERIFY_TLS: "false"
       GOOGLE_SERVICE_ACCOUNT_FILE: /secrets/gcal-service-account.json
-      GOOGLE_CALENDAR_ID: "tayjes2005@gmail.com"  # <-- replace with the real calendar ID
+      GOOGLE_CALENDAR_ID: "tayjes2005@gmail.com"
     volumes:
       - ./certs/agent.crt:/certs/agent.crt:ro
       - ./certs/agent.key:/certs/agent.key:ro
       - ./saga-provider/seed-keys:/keys:ro
       - ./secrets/gcal-service-account.json:/secrets/gcal-service-account.json:ro
-    ports:
-      - "9001:9001"
-    networks:
-      - saga-net
+    ports: ["9001:9001"]
+    networks: [saga-net]
 
   bob-agent:
     build: ./agent
-    depends_on:
-      - provider
+    depends_on: [provider]
     environment:
       AGENT_UID: bob
       AGENT_NAME: calendar_agent
@@ -57,16 +49,45 @@ services:
       PROVIDER_URL: https://provider:8443
       PROVIDER_VERIFY_TLS: "false"
       GOOGLE_SERVICE_ACCOUNT_FILE: /secrets/gcal-service-account.json
-      GOOGLE_CALENDAR_ID: "tayjes2005@gmail.com"  # <-- replace with the real calendar ID (can be the same as Alice's for a demo with one Google account)
+      GOOGLE_CALENDAR_ID: "tayjes2005@gmail.com"
     volumes:
       - ./certs/agent.crt:/certs/agent.crt:ro
       - ./certs/agent.key:/certs/agent.key:ro
       - ./saga-provider/seed-keys:/keys:ro
       - ./secrets/gcal-service-account.json:/secrets/gcal-service-account.json:ro
-    ports:
-      - "9002:9002"
-    networks:
-      - saga-net
+    ports: ["9002:9002"]
+    networks: [saga-net]
+
+  seed-admin:
+    build: ./saga-provider
+    depends_on: [provider]
+    command: ["uvicorn", "seed_api:app", "--host", "0.0.0.0", "--port", "8081"]
+    environment:
+      PROVIDER_URL: https://provider:8443
+      PROVIDER_VERIFY_TLS: "false"
+      SEED_ADMIN_TOKEN: ${SEED_ADMIN_TOKEN:?set SEED_ADMIN_TOKEN}
+      SEED_CONFIG_PATH: /config/seed_config.json
+      SEED_KEYS_DIR: /keys
+    volumes:
+      - ./saga-provider/seed-keys:/keys
+      - ./saga-provider/seed_config.json:/config/seed_config.json:ro
+    networks: [saga-net]
+
+  ui:
+    build: ./ui
+    depends_on: [alice-agent, bob-agent, seed-admin]
+    environment:
+      ALICE_AGENT_URL: https://alice-agent:9001
+      BOB_AGENT_URL: https://bob-agent:9002
+      AGENT_VERIFY_TLS: "false"
+      SEED_ADMIN_URL: http://seed-admin:8081
+      SEED_ADMIN_TOKEN: ${SEED_ADMIN_TOKEN:?set SEED_ADMIN_TOKEN}
+      ALICE_EMAIL: ${ALICE_EMAIL:-}
+      BOB_EMAIL: ${BOB_EMAIL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+    ports: ["8080:8080"]
+    networks: [saga-net]
 
 networks:
   saga-net:
