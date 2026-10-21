@@ -72,7 +72,9 @@ def _agent(name: str) -> str:
         return ALICE_URL
     if name == "bob":
         return BOB_URL
-    raise HTTPException(400, "sender agent must be alice or bob")
+    if name == "charlie":
+        return CHARLIE_AGENT_URL
+    raise HTTPException(400, "sender agent must be alice, bob, or charlie")
 
 
 async def _get_events(name: str, start: str, end: str):
@@ -166,14 +168,41 @@ async def availability(start: str, end: str):
 
 @app.post("/api/meeting")
 async def create_meeting(req: MeetingRequest):
-    if req.initiator not in ("alice", "bob"):
-        raise HTTPException(400, "initiator must be alice or bob")
+    if req.initiator not in ("alice", "bob", "charlie"):
+        raise HTTPException(400, "initiator must be alice, bob, or charlie")
 
     target = req.target_agent.strip()
-    if not target:
-        raise HTTPException(400, "target_agent is required")
+    if target not in ("alice:calendar_agent", "bob:calendar_agent"):
+        raise HTTPException(400, "target_agent must be alice:calendar_agent or bob:calendar_agent")
     if target == f"{req.initiator}:calendar_agent":
         raise HTTPException(400, "sender and target agents must be different")
+
+    # For Charlie, perform the real SAGA send first. It forces the local C
+    # agent to query Provider as charlie:calendar_agent before any calendar
+    # availability work or event creation can occur.
+    if req.initiator == "charlie":
+        try:
+            async with httpx.AsyncClient(verify=VERIFY_TLS, timeout=20.0) as client:
+                preflight = await client.post(
+                    f"{CHARLIE_AGENT_URL}/saga/send",
+                    json={
+                        "target_aid": target,
+                        "payload": {
+                            "action": "provider_auth_probe",
+                            "demo": "charlie-unregistered",
+                            "meeting_title": req.title,
+                        },
+                    },
+                )
+                preflight.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text or str(exc)
+            raise HTTPException(
+                exc.response.status_code,
+                f"Charlie Provider lookup failed for {target}: {detail}",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, f"Could not reach Charlie agent: {exc}") from exc
 
     start_dt = _parse_iso(req.start)
     end_dt = _parse_iso(req.end)
@@ -192,7 +221,7 @@ async def create_meeting(req: MeetingRequest):
     ) == []:
         raise HTTPException(409, "the selected time overlaps an existing event on Alice or Bob's calendar")
 
-    initiator_email = ALICE_EMAIL if req.initiator == "alice" else BOB_EMAIL
+    initiator_email = ALICE_EMAIL if req.initiator == "alice" else BOB_EMAIL if req.initiator == "bob" else ""
     target_email = BOB_EMAIL if target == "bob:calendar_agent" else ALICE_EMAIL if target == "alice:calendar_agent" else ""
     payload = {
         "action": "schedule_meeting",
@@ -326,8 +355,8 @@ async def _run_assistant_tool(name: str, args: dict, req: AssistantMeetingReques
 async def assistant_meeting(req: AssistantMeetingRequest):
     if not GROQ_API_KEY:
         raise HTTPException(503, "GROQ_API_KEY is not configured for the UI service.")
-    if req.initiator not in ("alice", "bob"):
-        raise HTTPException(400, "initiator must be alice or bob")
+    if req.initiator not in ("alice", "bob", "charlie"):
+        raise HTTPException(400, "initiator must be alice, bob, or charlie")
     if req.target_agent not in ("alice:calendar_agent", "bob:calendar_agent"):
         raise HTTPException(400, "target_agent must be alice:calendar_agent or bob:calendar_agent")
     if req.target_agent == f"{req.initiator}:calendar_agent":
@@ -551,5 +580,5 @@ def bob_dashboard():
 
 @app.get("/charlie")
 def charlie_demo_dashboard():
-    """Display-only C demo; intentionally does not register or contact the Provider."""
+    """Dashboard for the local Charlie agent; it is intentionally not registered with Provider."""
     return _serve_dashboard()
