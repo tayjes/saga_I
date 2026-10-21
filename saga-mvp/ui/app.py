@@ -55,6 +55,14 @@ def _parse_iso(value: str) -> datetime:
     return parsed
 
 
+def _has_explicit_timezone(value: str) -> bool:
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    except ValueError:
+        return False
+
+
 def _agent(name: str) -> str:
     if name == "alice":
         return ALICE_URL
@@ -270,7 +278,7 @@ async def _run_assistant_tool(name: str, args: dict, req: AssistantMeetingReques
         start_dt, end_dt = _parse_iso(start), _parse_iso(end)
         if end_dt <= start_dt:
             return {"error": "end must be after start"}
-        if start_dt.utcoffset() is None or end_dt.utcoffset() is None:
+        if not _has_explicit_timezone(start) or not _has_explicit_timezone(end):
             return {"error": "Use ISO 8601 datetimes with an explicit UTC offset."}
         duration = int(args.get("duration_minutes", 30))
         if duration < 1 or duration > 480:
@@ -294,7 +302,7 @@ async def _run_assistant_tool(name: str, args: dict, req: AssistantMeetingReques
         if not title:
             return {"error": "Meeting title is required."}
         start_dt, end_dt = _parse_iso(start), _parse_iso(end)
-        if start_dt.utcoffset() is None or end_dt.utcoffset() is None:
+        if not _has_explicit_timezone(start) or not _has_explicit_timezone(end):
             return {"error": "Use ISO 8601 datetimes with an explicit UTC offset."}
         if (start_dt, end_dt) not in checked_slots:
             return {"error": "Safety check blocked booking: this exact slot has not been confirmed free by check_availability. Check availability for the exact proposed interval first."}
