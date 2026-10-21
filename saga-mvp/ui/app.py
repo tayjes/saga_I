@@ -16,6 +16,7 @@ app = FastAPI(title="SAGA Meeting UI")
 BASE = Path(__file__).resolve().parent
 ALICE_URL = os.getenv("ALICE_AGENT_URL", "https://alice-agent:9001")
 BOB_URL = os.getenv("BOB_AGENT_URL", "https://bob-agent:9002")
+CHARLIE_AGENT_URL = os.getenv("CHARLIE_AGENT_URL", "https://charlie-agent:9003")
 SEED_ADMIN_URL = os.getenv("SEED_ADMIN_URL", "http://seed-admin:8081")
 SEED_ADMIN_TOKEN = os.getenv("SEED_ADMIN_TOKEN", "")
 VERIFY_TLS = os.getenv("AGENT_VERIFY_TLS", "false").lower() == "true"
@@ -138,7 +139,7 @@ def _free_slots(start: str, end: str, alice_events: list, bob_events: list, dura
 async def health():
     result = {}
     async with httpx.AsyncClient(verify=VERIFY_TLS, timeout=5.0) as c:
-        for name, url in (("alice", ALICE_URL), ("bob", BOB_URL)):
+        for name, url in (("alice", ALICE_URL), ("bob", BOB_URL), ("charlie", CHARLIE_AGENT_URL)):
             try:
                 r = await c.get(f"{url}/health")
                 result[name] = r.json()
@@ -456,6 +457,60 @@ async def assistant_meeting(req: AssistantMeetingRequest):
         "provider": "Groq via LangChain",
         "actions": actions,
     }
+
+
+class CharlieAttemptRequest(BaseModel):
+    target_aid: str
+
+
+@app.post("/api/charlie/attempt")
+async def charlie_attempt(req: CharlieAttemptRequest):
+    """Ask the local, unregistered Charlie agent to contact Alice or Bob.
+
+    The request goes through Charlie's real agent endpoint. Provider lookup
+    and contact-policy decisions are not simulated in this UI handler.
+    The payload is intentionally non-calendar and cannot create an event.
+    """
+    if req.target_aid not in ("alice:calendar_agent", "bob:calendar_agent"):
+        raise HTTPException(400, "target_aid must be alice:calendar_agent or bob:calendar_agent")
+
+    try:
+        async with httpx.AsyncClient(verify=VERIFY_TLS, timeout=15.0) as client:
+            response = await client.post(
+                f"{CHARLIE_AGENT_URL}/saga/send",
+                json={
+                    "target_aid": req.target_aid,
+                    "payload": {"action": "provider_auth_probe", "demo": "charlie-unregistered"},
+                },
+            )
+        try:
+            body = response.json()
+        except ValueError:
+            body = {"detail": response.text}
+        detail = str(body.get("detail", body))
+        provider_match = re.search(r"Provider lookup failed \\((\\d{3})\\)", detail)
+        provider_status = int(provider_match.group(1)) if provider_match else None
+        if response.is_success:
+            return {
+                "initiator": "charlie:calendar_agent",
+                "target": req.target_aid,
+                "status": "sent",
+                "stage": "message_exchange",
+                "http_status": response.status_code,
+                "provider_status": None,
+                "detail": body,
+            }
+        return {
+            "initiator": "charlie:calendar_agent",
+            "target": req.target_aid,
+            "status": "blocked" if provider_status in (403, 404) else "error",
+            "stage": "provider_lookup" if provider_status is not None else "agent_request",
+            "http_status": response.status_code,
+            "provider_status": provider_status,
+            "detail": detail,
+        }
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Could not reach Charlie agent: {exc}") from exc
 
 
 @app.post("/api/otk-refresh")
