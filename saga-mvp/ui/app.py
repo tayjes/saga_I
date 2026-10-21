@@ -389,7 +389,7 @@ async def assistant_meeting(req: AssistantMeetingRequest):
     ).bind_tools(ASSISTANT_TOOLS)
     messages = [{"role": "system", "content": system_prompt}] + conversation
     messages[0]["content"] += (
-        "\\n\\nFrontend meeting context: sender=" + req.initiator +
+        " Frontend meeting context: sender=" + req.initiator +
         ":calendar_agent; recipient=" + req.target_agent +
         "; timezone=" + zone_name +
         ". Treat this context as authoritative. Resolve date/time from the user's latest message "
@@ -399,11 +399,15 @@ async def assistant_meeting(req: AssistantMeetingRequest):
     actions = []
     booking_completed = False
     user_text = " ".join(message.content for message in req.messages if message.role == "user")
-    booking_authorized = bool(re.search(r"\\b(schedule|book|booking|reserve|arrange|set up|put (?:it|that) on (?:the )?calendar|go ahead and book|confirm the booking)\\b", user_text, re.IGNORECASE))
+    booking_authorized = bool(re.search(
+        r"(schedule|book|booking|reserve|arrange|set\\s+(?:up\\s+)?(?:a\\s+)?meeting|create\\s+(?:a\\s+)?meeting|put .*calendar|confirm the booking)",
+        user_text,
+        re.IGNORECASE,
+    ))
     if not booking_authorized and req.messages:
         latest_user = next((m.content.strip().lower() for m in reversed(req.messages) if m.role == "user"), "")
         prior_assistant = " ".join(m.content.lower() for m in req.messages if m.role == "assistant")
-        booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"\\b(book|schedule|put .*calendar)\\b", prior_assistant))
+        booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"(book|schedule|set\\s+(?:up\\s+)?(?:a\\s+)?meeting|create\\s+(?:a\\s+)?meeting|put .*calendar)", prior_assistant))
 
     for _ in range(6):
         try:
