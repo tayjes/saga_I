@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 
 from pathlib import Path
 
