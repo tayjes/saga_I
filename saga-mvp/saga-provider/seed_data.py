@@ -147,7 +147,7 @@ def refresh_agent_otks(client: httpx.Client, signing_key: SigningKey, uid: str, 
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
             json.dump(updated_data, temp_file, indent=2)
-            temp_file.write("\\n")
+            temp_file.write("\n")
             temp_file.flush()
             os.fsync(temp_file.fileno())
         os.chmod(temp_name, 0o600)
