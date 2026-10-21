@@ -222,6 +222,23 @@ async def refresh_otks(req: RefreshRequest):
         return r.json()
 
 
+def _serve_dashboard():
+    return FileResponse(BASE / "static" / "index.html")
+
+
 @app.get("/")
 def index():
-    return FileResponse(BASE / "static" / "index.html")
+    """Overview dashboard with a selectable sender."""
+    return _serve_dashboard()
+
+
+@app.get("/alice")
+def alice_dashboard():
+    """Alice-specific dashboard; the browser locks Alice as the sender."""
+    return _serve_dashboard()
+
+
+@app.get("/bob")
+def bob_dashboard():
+    """Bob-specific dashboard; the browser locks Bob as the sender."""
+    return _serve_dashboard()
