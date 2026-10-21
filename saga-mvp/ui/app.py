@@ -7,6 +7,8 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from langchain_groq import ChatGroq
+from langchain_core.messages import AIMessage, ToolMessage
 
 from pathlib import Path
 
@@ -232,8 +234,6 @@ async def create_meeting(req: MeetingRequest):
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
 ASSISTANT_TOOLS = [
     {
         "type": "function",
@@ -377,69 +377,79 @@ async def assistant_meeting(req: AssistantMeetingRequest):
         prior_assistant = " ".join(m.content.lower() for m in req.messages if m.role == "assistant")
         booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"\b(book|schedule|put .*calendar)\b", prior_assistant))
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        for _ in range(6):
+    # LangChain invokes the Groq-hosted chat model and binds the existing API tools.
+    # Include the resolved participants in the model context so natural language such as
+    # "Alice to Bob, schedule a meeting at 2 PM" is grounded in the frontend selections.
+    model = ChatGroq(
+        api_key=GROQ_API_KEY,
+        model=GROQ_MODEL,
+        temperature=0.1,
+        timeout=45,
+        max_retries=2,
+    ).bind_tools(ASSISTANT_TOOLS)
+    messages = [{"role": "system", "content": system_prompt}] + conversation
+    messages[0]["content"] += (
+        "\\n\\nFrontend meeting context: sender=" + req.initiator +
+        ":calendar_agent; recipient=" + req.target_agent +
+        "; timezone=" + zone_name +
+        ". Treat this context as authoritative. Resolve date/time from the user's latest message "
+        "and ask for missing details rather than guessing."
+    )
+    checked_slots = set()
+    actions = []
+    booking_completed = False
+    user_text = " ".join(message.content for message in req.messages if message.role == "user")
+    booking_authorized = bool(re.search(r"\\b(schedule|book|booking|reserve|arrange|set up|put (?:it|that) on (?:the )?calendar|go ahead and book|confirm the booking)\\b", user_text, re.IGNORECASE))
+    if not booking_authorized and req.messages:
+        latest_user = next((m.content.strip().lower() for m in reversed(req.messages) if m.role == "user"), "")
+        prior_assistant = " ".join(m.content.lower() for m in req.messages if m.role == "assistant")
+        booking_authorized = latest_user in {"yes", "yes please", "please do", "go ahead", "that works", "confirm"} and bool(re.search(r"\\b(book|schedule|put .*calendar)\\b", prior_assistant))
+
+    for _ in range(6):
+        try:
+            assistant_message = await model.ainvoke(messages)
+        except Exception as exc:
+            detail = str(exc)[:1000]
+            raise HTTPException(502, f"LangChain/Groq invocation failed: {detail}") from exc
+        messages.append(assistant_message)
+        tool_calls = getattr(assistant_message, "tool_calls", []) or []
+        if not tool_calls:
+            content = assistant_message.content
+            if isinstance(content, list):
+                content = " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+            return {
+                "reply": str(content or "I couldn't produce a response. Please try again."),
+                "model": GROQ_MODEL,
+                "provider": "Groq via LangChain",
+                "actions": actions,
+            }
+
+        for call in tool_calls:
+            name = call.get("name", "")
+            arguments = call.get("args") or {}
             try:
-                response = await client.post(
-                    GROQ_API_URL,
-                    headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                    json={
-                        "model": GROQ_MODEL,
-                        "messages": messages,
-                        "tools": ASSISTANT_TOOLS,
-                        "tool_choice": "auto",
-                        "temperature": 0.1,
-                    },
-                )
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                detail = exc.response.text[:1000] or "Groq API request failed"
-                raise HTTPException(502, f"Groq API error: {detail}") from exc
-            except httpx.HTTPError as exc:
-                raise HTTPException(502, f"Could not reach Groq API: {exc}") from exc
-
-            data = response.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise HTTPException(502, "Groq returned no assistant response.")
-            assistant_message = choices[0].get("message", {})
-            messages.append(assistant_message)
-            tool_calls = assistant_message.get("tool_calls") or []
-            if not tool_calls:
-                return {
-                    "reply": assistant_message.get("content") or "I couldn't produce a response. Please try again.",
-                    "model": data.get("model", GROQ_MODEL),
-                    "actions": actions,
-                }
-
-            for call in tool_calls:
-                function = call.get("function") or {}
-                name = function.get("name", "")
-                try:
-                    arguments = json.loads(function.get("arguments") or "{}")
-                    if name == "schedule_meeting" and booking_completed:
-                        result = {"error": "A meeting was already booked during this request; do not create a duplicate."}
-                    else:
-                        result = await _run_assistant_tool(name, arguments, req, checked_slots, booking_authorized)
-                    if name == "schedule_meeting" and isinstance(result, dict) and (result.get("booking_result") or {}).get("status") == "scheduled":
-                        booking_completed = True
-                except HTTPException as exc:
-                    result = {"error": exc.detail}
-                except (ValueError, TypeError, KeyError) as exc:
-                    result = {"error": f"Invalid tool arguments: {exc}"}
-                except Exception as exc:
-                    result = {"error": f"Tool failed: {type(exc).__name__}: {exc}"}
-                actions.append({"tool": name, "result": result})
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.get("id", ""),
-                    "name": name,
-                    "content": json.dumps(result, default=str),
-                })
+                if name == "schedule_meeting" and booking_completed:
+                    result = {"error": "A meeting was already booked during this request; do not create a duplicate."}
+                else:
+                    result = await _run_assistant_tool(name, arguments, req, checked_slots, booking_authorized)
+                if name == "schedule_meeting" and isinstance(result, dict) and (result.get("booking_result") or {}).get("status") == "scheduled":
+                    booking_completed = True
+            except HTTPException as exc:
+                result = {"error": exc.detail}
+            except (ValueError, TypeError, KeyError) as exc:
+                result = {"error": f"Invalid tool arguments: {exc}"}
+            except Exception as exc:
+                result = {"error": f"Tool failed: {type(exc).__name__}: {exc}"}
+            actions.append({"tool": name, "result": result})
+            messages.append(ToolMessage(
+                content=json.dumps(result, default=str),
+                tool_call_id=call.get("id", ""),
+            ))
 
     return {
         "reply": "I reached the tool-call limit before finishing. Please narrow the request or try again.",
         "model": GROQ_MODEL,
+        "provider": "Groq via LangChain",
         "actions": actions,
     }
 
