@@ -109,13 +109,13 @@ The Docker Compose stack includes a local web UI on port **8080**:
 - Alice dashboard: http://localhost:8080/alice
 - Bob dashboard: http://localhost:8080/bob
 
-Each dedicated dashboard locks the sender to its own agent, schedules a meeting with the other agent, checks calendar availability, and exposes an OTK refresh control for that agent. Refreshing OTKs updates the Provider pool and the matching private keys in the mounted key file.
+Each dedicated dashboard locks the sender to its own agent, schedules a meeting with the other agent, checks calendar availability, and exposes an OTK refresh control for that agent. Refreshing OTKs updates the Provider pool and the matching private keys in the mounted key file. The page also includes a Groq-powered natural-language assistant that uses function/tool calling to check both calendars and then invokes the existing SAGA meeting workflow to book a slot.
 
 ### Local setup
 
 From this directory:
 
-1. Create local environment settings and replace the admin-token placeholder with a long random value:
+1. Create local environment settings and replace the admin-token placeholder with a long random value. Add your Groq API key to `GROQ_API_KEY` (get one from [Groq Console](https://console.groq.com/keys)); `GROQ_MODEL` defaults to `openai/gpt-oss-20b` and can be changed to another tool-calling model available to your account:
    ```bash
    cp .env.example .env
    ```
@@ -131,3 +131,8 @@ From this directory:
 5. Open one of the URLs above. To inspect startup issues, use `docker compose logs --tail=100 ui seed-admin provider alice-agent bob-agent`.
 
 Do not commit `.env`, `seed_config.json`, Google credentials, private keys, or generated local key files. The admin token protects the seed-admin endpoint; keep it private and use this stack for local development only.
+
+
+### Groq meeting assistant
+
+Use the natural-language panel on the overview, Alice, or Bob dashboard. State the meeting title, duration, preferred date/time, and any constraints. The assistant uses Groq tool calling to invoke `check_availability` against both calendars before it can invoke `schedule_meeting`; the backend rejects booking a slot that was not returned as free. It asks follow-up questions when required details are missing. It only creates calendar events when the user explicitly asks to book or schedule. Keep `GROQ_API_KEY` in your local `.env` only—never commit the real key.
