@@ -493,3 +493,8 @@ def alice_dashboard():
 def bob_dashboard():
     """Bob-specific dashboard; the browser locks Bob as the sender."""
     return _serve_dashboard()
+
+@app.get("/charlie")
+def charlie_demo_dashboard():
+    """Display-only C demo; intentionally does not register or contact the Provider."""
+    return _serve_dashboard()
